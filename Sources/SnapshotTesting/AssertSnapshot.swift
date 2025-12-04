@@ -88,6 +88,7 @@ public var __record: SnapshotTestingConfiguration.Record = {
 ///   - snapshotting: A strategy for serializing, deserializing, and comparing values.
 ///   - name: An optional description of the snapshot.
 ///   - recording: Whether or not to record a new reference.
+///   - prepare: A closure to run just before the snapshot is taken, after the view is laid out.
 ///   - timeout: The amount of time a snapshot must be generated in.
 ///   - fileID: The file ID in which failure occurred. Defaults to the file ID of the test case in
 ///     which this function was called.
@@ -104,6 +105,7 @@ public func assertSnapshot<Value, Format>(
   as snapshotting: Snapshotting<Value, Format>,
   named name: String? = nil,
   record recording: Bool? = nil,
+  prepare: @Sendable @escaping () -> Void = {},
   timeout: TimeInterval = 5,
   fileID: StaticString = #fileID,
   file filePath: StaticString = #filePath,
@@ -116,6 +118,7 @@ public func assertSnapshot<Value, Format>(
     as: snapshotting,
     named: name,
     record: recording,
+    prepare: prepare,
     timeout: timeout,
     fileID: fileID,
     file: filePath,
@@ -140,6 +143,7 @@ public func assertSnapshot<Value, Format>(
 ///   - strategies: A dictionary of names and strategies for serializing, deserializing, and
 ///     comparing values.
 ///   - recording: Whether or not to record a new reference.
+///   - prepare: A closure to run just before each snapshot is taken.
 ///   - timeout: The amount of time a snapshot must be generated in.
 ///   - fileID: The file ID in which failure occurred. Defaults to the file ID of the test case in
 ///     which this function was called.
@@ -155,6 +159,7 @@ public func assertSnapshots<Value, Format>(
   of value: @autoclosure () throws -> Value,
   as strategies: [String: Snapshotting<Value, Format>],
   record recording: Bool? = nil,
+  prepare: @Sendable @escaping () -> Void = {},
   timeout: TimeInterval = 5,
   fileID: StaticString = #fileID,
   file filePath: StaticString = #filePath,
@@ -168,6 +173,7 @@ public func assertSnapshots<Value, Format>(
       as: strategy,
       named: name,
       record: recording,
+      prepare: prepare,
       timeout: timeout,
       fileID: fileID,
       file: filePath,
@@ -184,6 +190,7 @@ public func assertSnapshots<Value, Format>(
 ///   - value: A value to compare against a reference.
 ///   - strategies: An array of strategies for serializing, deserializing, and comparing values.
 ///   - recording: Whether or not to record a new reference.
+///   - prepare: A closure to run just before each snapshot is taken.
 ///   - timeout: The amount of time a snapshot must be generated in.
 ///   - fileID: The file ID in which failure occurred. Defaults to the file ID of the test case in
 ///     which this function was called.
@@ -199,6 +206,7 @@ public func assertSnapshots<Value, Format>(
   of value: @autoclosure () throws -> Value,
   as strategies: [Snapshotting<Value, Format>],
   record recording: Bool? = nil,
+  prepare: @Sendable @escaping () -> Void = {},
   timeout: TimeInterval = 5,
   fileID: StaticString = #fileID,
   file filePath: StaticString = #filePath,
@@ -211,6 +219,7 @@ public func assertSnapshots<Value, Format>(
       of: try value(),
       as: strategy,
       record: recording,
+      prepare: prepare,
       timeout: timeout,
       fileID: fileID,
       file: filePath,
@@ -264,6 +273,7 @@ public func assertSnapshots<Value, Format>(
 ///   - snapshotDirectory: Optional directory to save snapshots. By default snapshots will be saved
 ///     in a directory with the same name as the test file, and that directory will sit inside a
 ///     directory `__Snapshots__` that sits next to your test file.
+///   - prepare: A closure to run just before the snapshot is taken, after the view is laid out.
 ///   - timeout: The amount of time a snapshot must be generated in.
 ///   - file: The file in which failure occurred. Defaults to the file name of the test case in
 ///     which this function was called.
@@ -278,6 +288,7 @@ public func verifySnapshot<Value, Format>(
   named name: String? = nil,
   record recording: Bool? = nil,
   snapshotDirectory: String? = nil,
+  prepare: @Sendable @escaping () -> Void = {},
   timeout: TimeInterval = 5,
   fileID: StaticString = #fileID,
   file filePath: StaticString = #file,
@@ -297,7 +308,7 @@ public func verifySnapshot<Value, Format>(
     (recording == true ? .all : recording == false ? .missing : nil)
     ?? SnapshotTestingConfiguration.current?.record
     ?? _record
-  return withSnapshotTesting(record: record) { () -> String? in
+  return withSnapshotTesting(record: record, prepare: prepare) { () -> String? in
     do {
       let fileUrl = URL(fileURLWithPath: "\(filePath)", isDirectory: false)
       let fileName = fileUrl.deletingPathExtension().lastPathComponent

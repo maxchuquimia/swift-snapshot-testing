@@ -34,6 +34,7 @@
         return view.snapshot
           ?? Async { callback in
             addImagesForRenderedViews(view).sequence().run { views in
+              SnapshotTestingConfiguration.current?.prepare?()
               let bitmapRep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
               view.cacheDisplay(in: view.bounds, to: bitmapRep)
               let image = NSImage(size: view.bounds.size)

@@ -22,17 +22,20 @@
 /// - Parameters:
 ///   - record: The record mode to use while asserting snapshots.
 ///   - diffTool: The diff tool to use while asserting snapshots.
+///   - prepare: A closure to run just before a snapshot is taken, after the view is laid out (for view snapshots).
 ///   - operation: The operation to perform.
 public func withSnapshotTesting<R>(
   record: SnapshotTestingConfiguration.Record? = nil,
   diffTool: SnapshotTestingConfiguration.DiffTool? = nil,
+  prepare: (@Sendable () -> Void)? = nil,
   operation: () throws -> R
 ) rethrows -> R {
   try SnapshotTestingConfiguration.$current.withValue(
     SnapshotTestingConfiguration(
       record: record ?? SnapshotTestingConfiguration.current?.record ?? _record,
       diffTool: diffTool ?? SnapshotTestingConfiguration.current?.diffTool
-        ?? SnapshotTesting._diffTool
+        ?? SnapshotTesting._diffTool,
+      prepare: prepare ?? SnapshotTestingConfiguration.current?.prepare
     )
   ) {
     try operation()
@@ -41,16 +44,18 @@ public func withSnapshotTesting<R>(
 
 /// Customizes `assertSnapshot` for the duration of an asynchronous operation.
 ///
-/// See ``withSnapshotTesting(record:diffTool:operation:)-2kuyr`` for more information.
+/// See ``withSnapshotTesting(record:diffTool:prepare:operation:)-2kuyr`` for more information.
 public func withSnapshotTesting<R>(
   record: SnapshotTestingConfiguration.Record? = nil,
   diffTool: SnapshotTestingConfiguration.DiffTool? = nil,
+  prepare: (@Sendable () -> Void)? = nil,
   operation: () async throws -> R
 ) async rethrows -> R {
   try await SnapshotTestingConfiguration.$current.withValue(
     SnapshotTestingConfiguration(
       record: record ?? SnapshotTestingConfiguration.current?.record ?? _record,
-      diffTool: diffTool ?? SnapshotTestingConfiguration.current?.diffTool ?? _diffTool
+      diffTool: diffTool ?? SnapshotTestingConfiguration.current?.diffTool ?? _diffTool,
+      prepare: prepare ?? SnapshotTestingConfiguration.current?.prepare
     )
   ) {
     try await operation()
@@ -67,6 +72,9 @@ public struct SnapshotTestingConfiguration: Sendable {
   /// See ``DiffTool-swift.struct`` for more information.
   public var diffTool: DiffTool?
 
+  /// A closure to run just before a snapshot is taken, after the view is laid out (for view snapshots).
+  public var prepare: (@Sendable () -> Void)?
+
   /// The recording strategy to use while running snapshot tests.
   ///
   /// See ``Record-swift.struct`` for more information.
@@ -74,9 +82,11 @@ public struct SnapshotTestingConfiguration: Sendable {
 
   public init(
     record: Record?,
-    diffTool: DiffTool?
+    diffTool: DiffTool?,
+    prepare: (@Sendable () -> Void)? = nil
   ) {
     self.diffTool = diffTool
+    self.prepare = prepare
     self.record = record
   }
 

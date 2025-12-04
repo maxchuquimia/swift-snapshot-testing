@@ -1063,6 +1063,8 @@
       viewController.view.setNeedsLayout()
       viewController.view.layoutIfNeeded()
 
+      SnapshotTestingConfiguration.current?.prepare?()
+
       return {
         rootViewController.beginAppearanceTransition(false, animated: false)
         viewController.willMove(toParent: nil)
