@@ -18,17 +18,14 @@
     /// - Parameters:
     ///   - record: The record mode of the test.
     ///   - diffTool: The diff tool to use in failure messages.
-    ///   - prepare: A closure to run just before a snapshot is taken, after the view is laid out (for view snapshots).
     public static func snapshots(
       record: SnapshotTestingConfiguration.Record? = nil,
-      diffTool: SnapshotTestingConfiguration.DiffTool? = nil,
-      prepare: (@Sendable () -> Void)? = nil
+      diffTool: SnapshotTestingConfiguration.DiffTool? = nil
     ) -> Self {
       _SnapshotsTestTrait(
         configuration: SnapshotTestingConfiguration(
           record: record,
-          diffTool: diffTool,
-          prepare: prepare
+          diffTool: diffTool
         )
       )
     }
@@ -52,8 +49,7 @@
       ) async throws {
         try await withSnapshotTesting(
           record: configuration.record,
-          diffTool: configuration.diffTool,
-          prepare: configuration.prepare
+          diffTool: configuration.diffTool
         ) {
           try await File.$counter.withValue(File.Counter()) {
             try await function()
