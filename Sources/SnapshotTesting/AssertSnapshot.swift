@@ -511,7 +511,7 @@ public func verifySnapshot<Value, Format>(
 /// the snapshot pipeline — which is required in Xcode 26.3+ where GCD main-queue dispatches
 /// are not processed during `XCTWaiter`-based RunLoop spinning.
 @MainActor
-public func assertSnapshotAsync<Value: Sendable, Format: Sendable>(
+public func assertSnapshotAsync<Value, Format>(
   of value: @autoclosure () throws -> Value,
   as snapshotting: Snapshotting<Value, Format>,
   named name: String? = nil,
@@ -548,7 +548,7 @@ public func assertSnapshotAsync<Value: Sendable, Format: Sendable>(
 /// Async version of ``verifySnapshot(of:as:named:record:snapshotDirectory:timeout:fileID:file:testName:line:column:)``
 /// that uses `withCheckedContinuation` instead of `XCTWaiter.wait`.
 @MainActor
-public func verifySnapshotAsync<Value: Sendable, Format: Sendable>(
+public func verifySnapshotAsync<Value, Format>(
   of value: @autoclosure () throws -> Value,
   as snapshotting: Snapshotting<Value, Format>,
   named name: String? = nil,
