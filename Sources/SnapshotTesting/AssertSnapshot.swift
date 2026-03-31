@@ -501,6 +501,260 @@ public func verifySnapshot<Value, Format>(
   }
 }
 
+// MARK: - Async variants
+
+/// Async version of ``assertSnapshot(of:as:named:record:timeout:fileID:file:testName:line:column:)``
+/// that uses `withCheckedContinuation` instead of `XCTWaiter.wait` to wait for the snapshot.
+///
+/// By properly yielding the main actor instead of blocking with RunLoop spinning, this allows
+/// `Task { @MainActor in }` and `DispatchQueue.main.asyncAfter` dispatches to execute during
+/// the snapshot pipeline — which is required in Xcode 26.3+ where GCD main-queue dispatches
+/// are not processed during `XCTWaiter`-based RunLoop spinning.
+@MainActor
+public func assertSnapshotAsync<Value: Sendable, Format: Sendable>(
+  of value: @autoclosure () throws -> Value,
+  as snapshotting: Snapshotting<Value, Format>,
+  named name: String? = nil,
+  record recording: Bool? = nil,
+  timeout: TimeInterval = 5,
+  fileID: StaticString = #fileID,
+  file filePath: StaticString = #filePath,
+  testName: String = #function,
+  line: UInt = #line,
+  column: UInt = #column
+) async {
+  let failure = await verifySnapshotAsync(
+    of: try value(),
+    as: snapshotting,
+    named: name,
+    record: recording,
+    timeout: timeout,
+    fileID: fileID,
+    file: filePath,
+    testName: testName,
+    line: line,
+    column: column
+  )
+  guard let message = failure else { return }
+  recordIssue(
+    message,
+    fileID: fileID,
+    filePath: filePath,
+    line: line,
+    column: column
+  )
+}
+
+/// Async version of ``verifySnapshot(of:as:named:record:snapshotDirectory:timeout:fileID:file:testName:line:column:)``
+/// that uses `withCheckedContinuation` instead of `XCTWaiter.wait`.
+@MainActor
+public func verifySnapshotAsync<Value: Sendable, Format: Sendable>(
+  of value: @autoclosure () throws -> Value,
+  as snapshotting: Snapshotting<Value, Format>,
+  named name: String? = nil,
+  record recording: Bool? = nil,
+  snapshotDirectory: String? = nil,
+  timeout: TimeInterval = 5,
+  fileID: StaticString = #fileID,
+  file filePath: StaticString = #file,
+  testName: String = #function,
+  line: UInt = #line,
+  column: UInt = #column
+) async -> String? {
+  #if canImport(Testing)
+    if Test.current == nil {
+      CleanCounterBetweenTestCases.registerIfNeeded()
+    }
+  #else
+    CleanCounterBetweenTestCases.registerIfNeeded()
+  #endif
+
+  let record =
+    (recording == true ? .all : recording == false ? .missing : nil)
+    ?? SnapshotTestingConfiguration.current?.record
+    ?? _record
+  return await withSnapshotTesting(record: record) { () -> String? in
+    do {
+      let fileUrl = URL(fileURLWithPath: "\(filePath)", isDirectory: false)
+      let fileName = fileUrl.deletingPathExtension().lastPathComponent
+
+      #if os(Android)
+        let snapshotsBaseUrl = URL(
+          fileURLWithPath: "/data/local/tmp/android-xctest", isDirectory: true)
+      #else
+        let snapshotsBaseUrl = fileUrl.deletingLastPathComponent()
+      #endif
+
+      let snapshotDirectoryUrl =
+        snapshotDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        ?? snapshotsBaseUrl.appendingPathComponent("__Snapshots__").appendingPathComponent(fileName)
+
+      let identifier: String
+      if let name = name {
+        identifier = sanitizePathComponent(name)
+      } else {
+        identifier = String(
+          counter.next(for: snapshotDirectoryUrl.appendingPathComponent(testName).absoluteString)
+        )
+      }
+
+      let testName = sanitizePathComponent(testName)
+      var snapshotFileUrl =
+        snapshotDirectoryUrl
+        .appendingPathComponent("\(testName).\(identifier)")
+      if let ext = snapshotting.pathExtension {
+        snapshotFileUrl = snapshotFileUrl.appendingPathExtension(ext)
+      }
+      let fileManager = FileManager.default
+      try fileManager.createDirectory(at: snapshotDirectoryUrl, withIntermediateDirectories: true)
+
+      let snapshotAsync = snapshotting.snapshot(try value())
+      let optionalDiffable: Format? = await withCheckedContinuation { continuation in
+        snapshotAsync.run { b in
+          continuation.resume(returning: b)
+        }
+      }
+
+      guard var diffable = optionalDiffable else {
+        return "Couldn't snapshot value"
+      }
+
+      func recordSnapshot(writeToDisk: Bool) throws {
+        let snapshotData = snapshotting.diffing.toData(diffable)
+
+        if writeToDisk {
+          try snapshotData.write(to: snapshotFileUrl)
+        }
+
+        #if !os(Android) && !os(Linux) && !os(Windows)
+          if !isSwiftTesting,
+            ProcessInfo.processInfo.environment.keys.contains("__XCODE_BUILT_PRODUCTS_DIR_PATHS")
+          {
+            XCTContext.runActivity(named: "Attached Recorded Snapshot") { activity in
+              if writeToDisk {
+                let attachment = XCTAttachment(contentsOfFile: snapshotFileUrl)
+                activity.add(attachment)
+              } else {
+                let typeIdentifier = snapshotting.pathExtension.flatMap(
+                  uniformTypeIdentifier(fromExtension:))
+
+                let attachment = XCTAttachment(
+                  uniformTypeIdentifier: typeIdentifier,
+                  name: snapshotFileUrl.lastPathComponent,
+                  payload: snapshotData
+                )
+
+                activity.add(attachment)
+              }
+            }
+          }
+        #endif
+      }
+
+      if record == .all {
+        try recordSnapshot(writeToDisk: true)
+
+        return """
+          Record mode is on. Automatically recorded snapshot: …
+
+          open "\(snapshotFileUrl.absoluteString)"
+
+          Turn record mode off and re-run "\(testName)" to assert against the newly-recorded snapshot
+          """
+      }
+
+      guard fileManager.fileExists(atPath: snapshotFileUrl.path) else {
+        if record == .never {
+          try recordSnapshot(writeToDisk: false)
+
+          return """
+            No reference was found on disk. New snapshot was not recorded because recording is disabled
+            """
+        } else {
+          try recordSnapshot(writeToDisk: true)
+
+          return """
+            No reference was found on disk. Automatically recorded snapshot: …
+
+            open "\(snapshotFileUrl.absoluteString)"
+
+            Re-run "\(testName)" to assert against the newly-recorded snapshot.
+            """
+        }
+      }
+
+      let data = try Data(contentsOf: snapshotFileUrl)
+      guard let reference = snapshotting.diffing.fromData(data) else {
+        return "Failed to serialize \(snapshotFileUrl) as \(Format.self)"
+      }
+
+      #if os(iOS) || os(tvOS)
+        if let localDiff = diffable as? UIImage,
+          let refImage = reference as? UIImage,
+          localDiff.size == .zero && refImage.size == .zero
+        {
+          diffable = reference
+        }
+      #endif
+
+      guard let (failure, attachments) = snapshotting.diffing.diff(reference, diffable) else {
+        return nil
+      }
+
+      let artifactsUrl = URL(
+        fileURLWithPath: ProcessInfo.processInfo.environment["SNAPSHOT_ARTIFACTS"]
+          ?? NSTemporaryDirectory(), isDirectory: true
+      )
+      let artifactsSubUrl = artifactsUrl.appendingPathComponent(fileName)
+      try fileManager.createDirectory(at: artifactsSubUrl, withIntermediateDirectories: true)
+      let failedSnapshotFileUrl = artifactsSubUrl.appendingPathComponent(
+        snapshotFileUrl.lastPathComponent)
+      try snapshotting.diffing.toData(diffable).write(to: failedSnapshotFileUrl)
+
+      if !attachments.isEmpty {
+        #if !os(Linux) && !os(Android) && !os(Windows)
+          if ProcessInfo.processInfo.environment.keys.contains("__XCODE_BUILT_PRODUCTS_DIR_PATHS"),
+            !isSwiftTesting
+          {
+            XCTContext.runActivity(named: "Attached Failure Diff") { activity in
+              attachments.forEach {
+                activity.add($0)
+              }
+            }
+          }
+        #endif
+      }
+
+      let diffMessage = (SnapshotTestingConfiguration.current?.diffTool ?? _diffTool)(
+        currentFilePath: snapshotFileUrl.path,
+        failedFilePath: failedSnapshotFileUrl.path
+      )
+
+      var failureMessage: String
+      if let name = name {
+        failureMessage = "Snapshot \"\(name)\" does not match reference."
+      } else {
+        failureMessage = "Snapshot does not match reference."
+      }
+
+      if record == .failed {
+        try recordSnapshot(writeToDisk: true)
+        failureMessage += " A new snapshot was automatically recorded."
+      }
+
+      return """
+        \(failureMessage)
+
+        \(diffMessage)
+
+        \(failure.trimmingCharacters(in: .whitespacesAndNewlines))
+        """
+    } catch {
+      return error.localizedDescription
+    }
+  }
+}
+
 // MARK: - Private
 
 private var counter: File.Counter {
