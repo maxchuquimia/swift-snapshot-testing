@@ -36,14 +36,19 @@
       ///     human eye.
       ///   - layout: A view layout override.
       ///   - traits: A trait collection override.
-      ///   - prepare: A closure to run after view layout but before the snapshot is taken.
+      ///   - prepare: A closure to run synchronously after view layout but before the snapshot is taken.
+      ///   - asyncPrepare: A closure to run asynchronously after view layout but before the snapshot
+      ///     is taken. Awaiting inside this closure yields the main actor, allowing GCD main-queue
+      ///     dispatches (e.g. `DispatchQueue.main.asyncAfter`) to execute — unlike the synchronous
+      ///     `prepare` which runs during an `XCTWaiter` RunLoop spin where GCD dispatches are skipped.
       public static func image(
         drawHierarchyInKeyWindow: Bool = false,
         precision: Float = 1,
         perceptualPrecision: Float = 1,
         layout: SwiftUISnapshotLayout = .sizeThatFits,
         traits: UITraitCollection = .init(),
-        prepare: (() -> Void)? = nil
+        prepare: (() -> Void)? = nil,
+        asyncPrepare: (@MainActor @Sendable () async -> Void)? = nil
       )
         -> Snapshotting
       {
@@ -87,7 +92,8 @@
             traits: traits,
             view: controller.view,
             viewController: controller,
-            prepare: prepare
+            prepare: prepare,
+            asyncPrepare: asyncPrepare
           )
         }
       }

@@ -21,7 +21,10 @@
     ///     human eye.
     ///   - size: A view size override.
     ///   - traits: A trait collection override.
-    ///   - prepare: A closure to run after view layout but before the snapshot is taken.
+    ///   - prepare: A closure to run synchronously after view layout but before the snapshot is taken.
+    ///   - asyncPrepare: A closure to run asynchronously after view layout but before the snapshot
+    ///     is taken. See ``Snapshotting/image(drawHierarchyInKeyWindow:precision:perceptualPrecision:layout:traits:prepare:asyncPrepare:)``
+    ///     for details.
     public static func image(
       on config: ViewImageConfig,
       drawHierarchyInKeyWindow: Bool = false,
@@ -29,7 +32,8 @@
       perceptualPrecision: Float = 1,
       size: CGSize? = nil,
       traits: UITraitCollection = .init(),
-      prepare: (() -> Void)? = nil
+      prepare: (() -> Void)? = nil,
+      asyncPrepare: (@MainActor @Sendable () async -> Void)? = nil
     )
       -> Snapshotting
     {
@@ -44,7 +48,8 @@
           traits: traits,
           view: viewController.view,
           viewController: viewController,
-          prepare: prepare
+          prepare: prepare,
+          asyncPrepare: asyncPrepare
         )
       }
     }
@@ -62,14 +67,18 @@
     ///     human eye.
     ///   - size: A view size override.
     ///   - traits: A trait collection override.
-    ///   - prepare: A closure to run after view layout but before the snapshot is taken.
+    ///   - prepare: A closure to run synchronously after view layout but before the snapshot is taken.
+    ///   - asyncPrepare: A closure to run asynchronously after view layout but before the snapshot
+    ///     is taken. See the SwiftUI ``Snapshotting/image(drawHierarchyInKeyWindow:precision:perceptualPrecision:layout:traits:prepare:asyncPrepare:)``
+    ///     for details.
     public static func image(
       drawHierarchyInKeyWindow: Bool = false,
       precision: Float = 1,
       perceptualPrecision: Float = 1,
       size: CGSize? = nil,
       traits: UITraitCollection = .init(),
-      prepare: (() -> Void)? = nil
+      prepare: (() -> Void)? = nil,
+      asyncPrepare: (@MainActor @Sendable () async -> Void)? = nil
     )
       -> Snapshotting
     {
@@ -83,7 +92,8 @@
           traits: traits,
           view: viewController.view,
           viewController: viewController,
-          prepare: prepare
+          prepare: prepare,
+          asyncPrepare: asyncPrepare
         )
       }
     }

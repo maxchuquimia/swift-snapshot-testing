@@ -972,7 +972,8 @@
       traits: UITraitCollection,
       view: UIView,
       viewController: UIViewController,
-      prepare: (() -> Void)? = nil
+      prepare: (() -> Void)? = nil,
+      asyncPrepare: (@MainActor @Sendable () async -> Void)? = nil
     )
       -> Async<UIImage>
     {
@@ -987,6 +988,38 @@
       )
       // NB: Avoid safe area influence.
       if config.safeArea == .zero { view.frame.origin = .init(x: offscreen, y: offscreen) }
+
+      if let asyncPrepare {
+        return Async { callback in
+          Task { @MainActor in
+            await asyncPrepare()
+
+            let renderImage = {
+              renderer(bounds: view.bounds, for: traits).image { ctx in
+                if drawHierarchyInKeyWindow {
+                  view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+                } else {
+                  view.layer.render(in: ctx.cgContext)
+                }
+              }
+            }
+
+            if let existingSnapshot = view.snapshot {
+              existingSnapshot.run { image in
+                dispose()
+                callback(image)
+              }
+            } else {
+              addImagesForRenderedViews(view).sequence().run { views in
+                callback(renderImage())
+                views.forEach { $0.removeFromSuperview() }
+                view.frame = initialFrame
+                dispose()
+              }
+            }
+          }
+        }
+      }
 
       return
         (view.snapshot
